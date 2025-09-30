@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.4.0] - 2025-09-30
+
+### Changes
+
+- refactor: improve folder search by excluding redundant child matches instead of deprioritizing
+- feat: implement keyword highlighting in folder search suggestions
+- refactor: remove unused match position tracking in folder search results
+- improve fuzzy search
+- Update README.md
+- Improve code format
+
 ## [0.3.1] - 2025-04-30
 
 ### Changes

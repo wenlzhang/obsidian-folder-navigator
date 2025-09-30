@@ -1,6 +1,6 @@
 {
     "name": "folder-navigator",
-    "version": "0.3.1",
+    "version": "0.4.0",
     "description": "Quickly navigate to folders in your vault using fuzzy search.",
     "main": "main.js",
     "scripts": {
