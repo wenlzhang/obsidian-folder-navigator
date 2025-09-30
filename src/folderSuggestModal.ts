@@ -47,6 +47,12 @@ interface ExtendedApp extends App {
     internalPlugins: InternalPlugins;
 }
 
+interface FolderWithScore {
+    folder: TFolder;
+    score: number;
+    match: FuzzyMatch<TFolder>;
+}
+
 export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
     folders: TFolder[];
     plugin: FolderNavigatorPlugin;
@@ -221,6 +227,198 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
             `Updated folder history for "${folderPath}": ${JSON.stringify(history)}`,
             this.plugin,
         );
+    }
+
+    /**
+     * Custom search implementation with improved fuzzy matching
+     * Supports out-of-order keyword matching and better scoring
+     */
+    getSuggestions(query: string): FuzzyMatch<TFolder>[] {
+        // If no query, return all items (or recent/frequent items based on settings)
+        if (!query || query.trim().length === 0) {
+            return this.sortedFolders.map((folder) => ({
+                item: folder,
+                match: { score: 0, matches: [] },
+            }));
+        }
+
+        const normalizedQuery = query.toLowerCase().trim();
+
+        // Split query into keywords (space-separated)
+        const keywords = normalizedQuery
+            .split(/\s+/)
+            .filter((k) => k.length > 0);
+
+        log(
+            `Search query: "${query}", keywords: [${keywords.join(", ")}]`,
+            this.plugin,
+        );
+
+        // Score each folder
+        const foldersWithScore: FolderWithScore[] = [];
+
+        for (const folder of this.sortedFolders) {
+            // Skip separators
+            if ((folder as any)._isSeparator) {
+                foldersWithScore.push({
+                    folder,
+                    score: -1,
+                    match: { item: folder, match: { score: 0, matches: [] } },
+                });
+                continue;
+            }
+
+            const folderPath = folder.path.toLowerCase();
+            const folderName = folder.name.toLowerCase();
+
+            // Check if all keywords match (in any order)
+            let allKeywordsMatch = true;
+            let totalScore = 0;
+            const matchPositions: number[] = [];
+
+            for (const keyword of keywords) {
+                const pathIndex = folderPath.indexOf(keyword);
+                const nameIndex = folderName.indexOf(keyword);
+
+                if (pathIndex === -1) {
+                    // Keyword doesn't match this folder at all
+                    allKeywordsMatch = false;
+                    break;
+                }
+
+                // Calculate score for this keyword
+                let keywordScore = 0;
+
+                // Bonus for matching in folder name (not just path)
+                if (nameIndex !== -1) {
+                    keywordScore += 100;
+
+                    // Extra bonus for exact name match
+                    if (folderName === keyword) {
+                        keywordScore += 200;
+                    }
+                    // Bonus for name starting with keyword
+                    else if (nameIndex === 0) {
+                        keywordScore += 50;
+                    }
+                } else {
+                    // Match is in parent path, lower score
+                    keywordScore += 10;
+                }
+
+                // Bonus for match position (earlier is better)
+                keywordScore += Math.max(0, 50 - pathIndex);
+
+                totalScore += keywordScore;
+                matchPositions.push(pathIndex);
+            }
+
+            if (allKeywordsMatch) {
+                // Additional scoring adjustments
+
+                // Penalize deeper nested folders
+                const depth = folder.path.split("/").length;
+                totalScore -= depth * 5;
+
+                // Bonus for shorter paths (more specific)
+                totalScore += Math.max(0, 100 - folder.path.length);
+
+                foldersWithScore.push({
+                    folder,
+                    score: totalScore,
+                    match: {
+                        item: folder,
+                        match: {
+                            score: totalScore,
+                            matches: matchPositions.map((pos, idx) => [
+                                pos,
+                                keywords[idx].length,
+                            ]),
+                        },
+                    },
+                });
+            }
+        }
+
+        // Sort by score (descending)
+        foldersWithScore.sort((a, b) => {
+            // Keep separators at their original positions
+            if (
+                (a.folder as any)._isSeparator ||
+                (b.folder as any)._isSeparator
+            ) {
+                return 0;
+            }
+            return b.score - a.score;
+        });
+
+        // Apply parent folder deduplication for Issue #4
+        // When a parent folder matches, deprioritize its immediate children
+        const results: FuzzyMatch<TFolder>[] = [];
+        const parentPaths = new Set<string>();
+
+        for (const item of foldersWithScore) {
+            // Always include separators
+            if ((item.folder as any)._isSeparator) {
+                results.push(item.match);
+                continue;
+            }
+
+            const folderPath = item.folder.path;
+
+            // Check if this folder's parent is already in results
+            let shouldInclude = true;
+            let isChildOfMatch = false;
+
+            for (const parentPath of parentPaths) {
+                // Check if current folder is a child of an already matched parent
+                if (folderPath.startsWith(parentPath + "/")) {
+                    isChildOfMatch = true;
+
+                    // Check if this child has additional matches beyond the parent
+                    const parentKeywordMatches = keywords.filter((k) =>
+                        parentPath.toLowerCase().includes(k),
+                    );
+                    const childKeywordMatches = keywords.filter((k) =>
+                        folderPath.toLowerCase().includes(k),
+                    );
+
+                    // If child doesn't have more keyword matches than parent, deprioritize it
+                    if (
+                        childKeywordMatches.length <=
+                        parentKeywordMatches.length
+                    ) {
+                        // Lower the score significantly to push it down
+                        item.score = item.score * 0.1;
+                        item.match.match.score = item.score;
+                    }
+                    break;
+                }
+            }
+
+            results.push(item.match);
+
+            // Add this folder to parent paths for future checks
+            if (!isChildOfMatch) {
+                parentPaths.add(folderPath);
+            }
+        }
+
+        // Re-sort after deduplication adjustments
+        const finalResults = results.sort((a, b) => {
+            // Keep separators at original positions
+            if ((a.item as any)._isSeparator || (b.item as any)._isSeparator) {
+                return 0;
+            }
+            return (b.match?.score || 0) - (a.match?.score || 0);
+        });
+
+        // Limit results
+        const limitedResults = finalResults.slice(0, this.limit);
+
+        log(`Found ${limitedResults.length} matching folders`, this.plugin);
+
+        return limitedResults;
     }
 
     getItems(): TFolder[] {
