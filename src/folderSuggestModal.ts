@@ -270,10 +270,12 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
 
             const folderPath = folder.path.toLowerCase();
             const folderName = folder.name.toLowerCase();
+            const originalPath = folder.path; // Keep original case for match positions
 
             // Check if all keywords match (in any order)
             let allKeywordsMatch = true;
             let totalScore = 0;
+            const matchPositions: Array<[number, number]> = [];
 
             for (const keyword of keywords) {
                 const pathIndex = folderPath.indexOf(keyword);
@@ -283,6 +285,16 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
                     // Keyword doesn't match this folder at all
                     allKeywordsMatch = false;
                     break;
+                }
+
+                // Store match positions for highlighting (using original path positions)
+                // We need to find the keyword in the original case-sensitive path
+                const originalPathLower = originalPath.toLowerCase();
+                const matchIndex = originalPathLower.indexOf(keyword);
+
+                // Record character positions for this keyword
+                for (let i = 0; i < keyword.length; i++) {
+                    matchPositions.push([matchIndex + i, matchIndex + i]);
                 }
 
                 // Calculate score for this keyword
@@ -328,9 +340,7 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
                         item: folder,
                         match: {
                             score: totalScore,
-                            // Don't provide match positions - our keyword matching doesn't align
-                            // with Obsidian's character-by-character fuzzy highlighting
-                            matches: [],
+                            matches: matchPositions,
                         },
                     },
                 });
@@ -723,7 +733,45 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
             return;
         }
 
-        // Regular folder rendering - use the default rendering
-        super.renderSuggestion(item, el);
+        // Custom rendering with keyword highlighting
+        el.empty();
+        const folder = item.item;
+        const folderPath = folder.path;
+
+        // Get match positions from the fuzzy match result
+        const matches = item.match?.matches || [];
+
+        if (matches.length === 0) {
+            // No matches, just display the text normally
+            el.setText(folderPath);
+            return;
+        }
+
+        // Sort matches by position
+        const sortedMatches = matches.slice().sort((a, b) => a[0] - b[0]);
+
+        // Build the highlighted text
+        let lastIndex = 0;
+        const textEl = el.createDiv({ cls: "suggestion-content" });
+
+        for (const match of sortedMatches) {
+            const [start, end] = match;
+
+            // Add text before the match
+            if (start > lastIndex) {
+                textEl.appendText(folderPath.substring(lastIndex, start));
+            }
+
+            // Add the matched text with highlighting
+            const matchEl = textEl.createSpan({ cls: "suggestion-highlight" });
+            matchEl.setText(folderPath.substring(start, end + 1));
+
+            lastIndex = end + 1;
+        }
+
+        // Add remaining text after the last match
+        if (lastIndex < folderPath.length) {
+            textEl.appendText(folderPath.substring(lastIndex));
+        }
     }
 }

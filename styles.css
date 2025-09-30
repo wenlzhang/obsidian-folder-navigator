@@ -14,3 +14,8 @@
     margin-bottom: 5px;
     pointer-events: none;
 }
+
+.suggestion-highlight {
+    font-weight: bold;
+    color: var(--text-accent);
+}
