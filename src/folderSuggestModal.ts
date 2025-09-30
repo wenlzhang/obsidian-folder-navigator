@@ -274,7 +274,6 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
             // Check if all keywords match (in any order)
             let allKeywordsMatch = true;
             let totalScore = 0;
-            const matchPositions: number[] = [];
 
             for (const keyword of keywords) {
                 const pathIndex = folderPath.indexOf(keyword);
@@ -310,7 +309,6 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
                 keywordScore += Math.max(0, 50 - pathIndex);
 
                 totalScore += keywordScore;
-                matchPositions.push(pathIndex);
             }
 
             if (allKeywordsMatch) {
@@ -330,10 +328,9 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
                         item: folder,
                         match: {
                             score: totalScore,
-                            matches: matchPositions.map((pos, idx) => [
-                                pos,
-                                keywords[idx].length,
-                            ]),
+                            // Don't provide match positions - our keyword matching doesn't align
+                            // with Obsidian's character-by-character fuzzy highlighting
+                            matches: [],
                         },
                     },
                 });
