@@ -9,8 +9,8 @@ This document describes the improvements made to the folder search functionality
 
 **Solution**: Implemented intelligent parent-child deduplication that:
 - Prioritizes parent folder matches over their children
-- Deprioritizes child folders unless they have additional keyword matches beyond what the parent has
-- Reduces child folder scores to 10% of their original score when they don't add new information
+- Completely excludes child folders unless they have additional keyword matches beyond what the parent has
+- Only shows children when they contain additional matched keywords not found in the parent path
 
 ### Issue #8: Out-of-Order Keyword Matching
 **Problem**: Search only worked when keywords were in the correct order. For example, searching "bar foo" would not match "foo/bar/baz".
@@ -54,24 +54,36 @@ Each folder is scored based on multiple factors:
 After initial scoring, the algorithm applies deduplication:
 
 ```typescript
-// Check if this child has additional matches beyond the parent
-const parentKeywordMatches = keywords.filter(k => 
-    parentPath.toLowerCase().includes(k)
-);
-const childKeywordMatches = keywords.filter(k =>
-    folderPath.toLowerCase().includes(k)
-);
+// Count total occurrences of all keywords in both parent and child
+let parentOccurrences = 0;
+let childOccurrences = 0;
 
-// If child doesn't have more keyword matches than parent, deprioritize it
-if (childKeywordMatches.length <= parentKeywordMatches.length) {
-    item.score = item.score * 0.1;
+for (const keyword of keywords) {
+    // Count occurrences of this keyword in parent
+    let pos = 0;
+    while ((pos = parentLower.indexOf(keyword, pos)) !== -1) {
+        parentOccurrences++;
+        pos += keyword.length;
+    }
+    
+    // Count occurrences of this keyword in child
+    pos = 0;
+    while ((pos = childLower.indexOf(keyword, pos)) !== -1) {
+        childOccurrences++;
+        pos += keyword.length;
+    }
+}
+
+// If child doesn't have more keyword occurrences than parent, exclude it
+if (childOccurrences <= parentOccurrences) {
+    shouldExclude = true;
 }
 ```
 
 This ensures that when searching for "abc":
-- "abc" gets high priority
-- "abc/xxx" gets significantly lower priority (unless "xxx" is also a keyword)
-- "abc/xxx/abc" would still rank high because it has an additional "abc" match
+- "abc" is shown (1 occurrence)
+- "abc/xxx" is completely hidden (still 1 occurrence of "abc")
+- "abc/xxx/abc" would be shown (2 occurrences of "abc")
 
 #### 4. Result Limiting
 
@@ -101,20 +113,33 @@ Results are sorted by final score and limited to the `maxResults` setting.
 **After (new behavior):**
 1. `abc` (score: 350)
 2. `projects/abc` (score: 150)
-3. `abc/xxx` (score: 34) ← Deprioritized to 10%
-4. `abc/yyy` (score: 34) ← Deprioritized to 10%
-5. `abc/zzz` (score: 34) ← Deprioritized to 10%
+3. (Other non-related folders...)
+
+Note: `abc/xxx`, `abc/yyy`, `abc/zzz` are completely excluded from results
 
 ### Example 3: Additional Keyword in Child
 **Query:** "abc test"
 
 **Results:**
-1. `abc/test` (score: 450) - Matches both keywords, high score
-2. `abc` (score: 350) - Only matches "abc"
-3. `projects/abc/test` (score: 340) - Matches both but deeper
-4. `abc/notes` (score: 34) - Only matches "abc", child of matching parent
+1. `abc/test` (score: 450) - Matches both keywords, shown
+2. `abc` (score: 350) - Only matches "abc", shown
+3. `projects/abc/test` (score: 340) - Matches both, shown
+4. Other folders matching both keywords...
 
-Note: `abc/test` ranks highest because it matches BOTH keywords even though it's a child of `abc`.
+Note: `abc/test` is shown because it has 2 total keyword occurrences ("abc" + "test"), more than its parent `abc` which only has 1. However, `abc/notes` would be excluded because it still only has 1 occurrence of "abc", the same count as its parent.
+
+### Example 4: Repeated Keywords
+**Query:** "ai prompt"
+
+**Folder Structure:**
+- `AI/Prompt engineering` - Contains "ai" (1x) and "prompt" (1x) = 2 total occurrences
+- `AI/Prompt engineering/Prompt engineering` - Contains "ai" (1x) and "prompt" (2x) = 3 total occurrences
+- `AI/Prompt engineering/asset` - Contains "ai" (1x) and "prompt" (1x) = 2 total occurrences
+
+**Results:**
+1. `AI/Prompt engineering` - Shown (2 occurrences)
+2. `AI/Prompt engineering/Prompt engineering` - Shown (3 occurrences, more than parent)
+3. `AI/Prompt engineering/asset` - Hidden (2 occurrences, same as parent)
 
 ## Technical Notes
 

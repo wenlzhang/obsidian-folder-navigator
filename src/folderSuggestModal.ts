@@ -288,13 +288,15 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
                 }
 
                 // Store match positions for highlighting (using original path positions)
-                // We need to find the keyword in the original case-sensitive path
+                // Find ALL occurrences of this keyword in the original case-sensitive path
                 const originalPathLower = originalPath.toLowerCase();
-                const matchIndex = originalPathLower.indexOf(keyword);
-
-                // Record character positions for this keyword
-                for (let i = 0; i < keyword.length; i++) {
-                    matchPositions.push([matchIndex + i, matchIndex + i]);
+                let pos = 0;
+                while ((pos = originalPathLower.indexOf(keyword, pos)) !== -1) {
+                    // Record character positions for this occurrence
+                    for (let i = 0; i < keyword.length; i++) {
+                        matchPositions.push([pos + i, pos + i]);
+                    }
+                    pos += keyword.length; // Move past this occurrence to find the next one
                 }
 
                 // Calculate score for this keyword
@@ -360,7 +362,7 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
         });
 
         // Apply parent folder deduplication for Issue #4
-        // When a parent folder matches, deprioritize its immediate children
+        // When a parent folder matches, completely exclude its children unless they have additional keyword matches
         const results: FuzzyMatch<TFolder>[] = [];
         const parentPaths = new Set<string>();
 
@@ -374,7 +376,7 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
             const folderPath = item.folder.path;
 
             // Check if this folder's parent is already in results
-            let shouldInclude = true;
+            let shouldExclude = false;
             let isChildOfMatch = false;
 
             for (const parentPath of parentPaths) {
@@ -382,48 +384,60 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
                 if (folderPath.startsWith(parentPath + "/")) {
                     isChildOfMatch = true;
 
-                    // Check if this child has additional matches beyond the parent
-                    const parentKeywordMatches = keywords.filter((k) =>
-                        parentPath.toLowerCase().includes(k),
-                    );
-                    const childKeywordMatches = keywords.filter((k) =>
-                        folderPath.toLowerCase().includes(k),
-                    );
+                    // Check if this child has additional keyword occurrences beyond the parent
+                    // Count total occurrences of all keywords in both parent and child
+                    const parentLower = parentPath.toLowerCase();
+                    const childLower = folderPath.toLowerCase();
 
-                    // If child doesn't have more keyword matches than parent, deprioritize it
-                    if (
-                        childKeywordMatches.length <=
-                        parentKeywordMatches.length
-                    ) {
-                        // Lower the score significantly to push it down
-                        item.score = item.score * 0.1;
-                        item.match.match.score = item.score;
+                    let parentOccurrences = 0;
+                    let childOccurrences = 0;
+
+                    for (const keyword of keywords) {
+                        // Count occurrences of this keyword in parent
+                        let pos = 0;
+                        while (
+                            (pos = parentLower.indexOf(keyword, pos)) !== -1
+                        ) {
+                            parentOccurrences++;
+                            pos += keyword.length;
+                        }
+
+                        // Count occurrences of this keyword in child
+                        pos = 0;
+                        while (
+                            (pos = childLower.indexOf(keyword, pos)) !== -1
+                        ) {
+                            childOccurrences++;
+                            pos += keyword.length;
+                        }
+                    }
+
+                    // If child doesn't have more keyword occurrences than parent, exclude it
+                    if (childOccurrences <= parentOccurrences) {
+                        shouldExclude = true;
                     }
                     break;
                 }
             }
 
-            results.push(item.match);
+            // Only include if not excluded
+            if (!shouldExclude) {
+                results.push(item.match);
 
-            // Add this folder to parent paths for future checks
-            if (!isChildOfMatch) {
-                parentPaths.add(folderPath);
+                // Add this folder to parent paths for future checks
+                if (!isChildOfMatch) {
+                    parentPaths.add(folderPath);
+                }
             }
         }
 
-        // Re-sort after deduplication adjustments
-        const finalResults = results.sort((a, b) => {
-            // Keep separators at original positions
-            if ((a.item as any)._isSeparator || (b.item as any)._isSeparator) {
-                return 0;
-            }
-            return (b.match?.score || 0) - (a.match?.score || 0);
-        });
-
         // Limit results
-        const limitedResults = finalResults.slice(0, this.limit);
+        const limitedResults = results.slice(0, this.limit);
 
-        log(`Found ${limitedResults.length} matching folders`, this.plugin);
+        log(
+            `Found ${limitedResults.length} matching folders (filtered from ${foldersWithScore.length} total matches)`,
+            this.plugin,
+        );
 
         return limitedResults;
     }
