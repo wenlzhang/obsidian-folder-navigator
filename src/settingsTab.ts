@@ -93,78 +93,10 @@ export class SettingsTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        // General settings section
-        new Setting(containerEl)
-            .setName("Maximum results")
-            .setDesc("Maximum number of folders to show in search results")
-            .addSlider((slider) =>
-                slider
-                    .setLimits(5, 50, 5)
-                    .setValue(this.plugin.settings.maxResults)
-                    .setDynamicTooltip()
-                    .onChange(async (value) => {
-                        this.plugin.settings.maxResults = value;
-                        await this.plugin.saveSettings();
-                    }),
-            );
+        // Folder display
+        new Setting(containerEl).setName("Folder display").setHeading();
 
-        new Setting(containerEl)
-            .setName("Expand target folder on navigation")
-            .setDesc(
-                "When enabled, folders will be automatically expanded when you navigate to them",
-            )
-            .addToggle((toggle) =>
-                toggle
-                    .setValue(this.plugin.settings.expandTargetFolder)
-                    .onChange(async (value) => {
-                        this.plugin.settings.expandTargetFolder = value;
-                        await this.plugin.saveSettings();
-                    }),
-            );
-
-        // New folder creation section
-        new Setting(containerEl).setName("Folder creation").setHeading();
-
-        new Setting(containerEl)
-            .setName("Default location for new folders")
-            .setDesc(
-                "Choose where new folders will be created when using the 'Create folder' option. Default is the vault root.",
-            )
-            .addButton((button) => {
-                const displayPath =
-                    this.plugin.settings.newFolderLocation || "/ (Root)";
-                button.setButtonText(displayPath).onClick(() => {
-                    const modal = new FolderSelectionModal(
-                        this.app,
-                        this.plugin,
-                        async (folder: TFolder) => {
-                            this.plugin.settings.newFolderLocation =
-                                folder.path;
-                            await this.plugin.saveSettings();
-                            button.setButtonText(folder.path || "/ (Root)");
-                        },
-                    );
-                    modal.open();
-                });
-            })
-            .addExtraButton((button) => {
-                button
-                    .setIcon("reset")
-                    .setTooltip("Reset to root folder")
-                    .onClick(async () => {
-                        this.plugin.settings.newFolderLocation = "";
-                        await this.plugin.saveSettings();
-                        // Update button text by recreating the setting
-                        this.display();
-                    });
-            });
-
-        // Folder display preferences section
-        new Setting(containerEl)
-            .setName("Folder display preferences")
-            .setHeading();
-
-        // Display priority setting
+        // Display priority
         new Setting(containerEl)
             .setName("Display priority")
             .setDesc(
@@ -197,7 +129,7 @@ export class SettingsTab extends PluginSettingTab {
                     });
             });
 
-        // Create recent folders setting
+        // Recent folders
         this.recentFoldersSettingEl = containerEl.createDiv();
         new Setting(this.recentFoldersSettingEl)
             .setName("Recent folders to show")
@@ -215,7 +147,7 @@ export class SettingsTab extends PluginSettingTab {
                     }),
             );
 
-        // Create frequent folders setting
+        // Frequent folders
         this.frequentFoldersSettingEl = containerEl.createDiv();
         new Setting(this.frequentFoldersSettingEl)
             .setName("Frequent folders to show")
@@ -233,7 +165,22 @@ export class SettingsTab extends PluginSettingTab {
                     }),
             );
 
-        // Add reset history button in its own container
+        // Maximum results
+        new Setting(containerEl)
+            .setName("Maximum results")
+            .setDesc("Maximum number of folders to show in search results")
+            .addSlider((slider) =>
+                slider
+                    .setLimits(5, 50, 5)
+                    .setValue(this.plugin.settings.maxResults)
+                    .setDynamicTooltip()
+                    .onChange(async (value) => {
+                        this.plugin.settings.maxResults = value;
+                        await this.plugin.saveSettings();
+                    }),
+            );
+
+        // Reset history
         this.resetHistorySettingEl = containerEl.createDiv();
         new Setting(this.resetHistorySettingEl)
             .setName("Reset folder history")
@@ -283,6 +230,60 @@ export class SettingsTab extends PluginSettingTab {
                         });
 
                         confirmModal.open();
+                    }),
+            );
+
+        // New folder location
+        new Setting(containerEl).setName("Folder creation").setHeading();
+
+        new Setting(containerEl)
+            .setName("Default location for new folders")
+            .setDesc(
+                "Choose where new folders will be created when using the 'Create folder' option. Default is the vault root.",
+            )
+            .addButton((button) => {
+                const displayPath =
+                    this.plugin.settings.newFolderLocation || "/ (Root)";
+                button.setButtonText(displayPath).onClick(() => {
+                    const modal = new FolderSelectionModal(
+                        this.app,
+                        this.plugin,
+                        async (folder: TFolder) => {
+                            this.plugin.settings.newFolderLocation =
+                                folder.path;
+                            await this.plugin.saveSettings();
+                            button.setButtonText(folder.path || "/ (Root)");
+                        },
+                    );
+                    modal.open();
+                });
+            })
+            .addExtraButton((button) => {
+                button
+                    .setIcon("reset")
+                    .setTooltip("Reset to root folder")
+                    .onClick(async () => {
+                        this.plugin.settings.newFolderLocation = "";
+                        await this.plugin.saveSettings();
+                        // Update button text by recreating the setting
+                        this.display();
+                    });
+            });
+
+        // Folder navigation
+        new Setting(containerEl).setName("Folder navigation").setHeading();
+
+        new Setting(containerEl)
+            .setName("Expand target folder on navigation")
+            .setDesc(
+                "When enabled, folders will be automatically expanded when you navigate to them",
+            )
+            .addToggle((toggle) =>
+                toggle
+                    .setValue(this.plugin.settings.expandTargetFolder)
+                    .onChange(async (value) => {
+                        this.plugin.settings.expandTargetFolder = value;
+                        await this.plugin.saveSettings();
                     }),
             );
 
