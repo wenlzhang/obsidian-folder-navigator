@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.5.0] - 2025-10-07
+
+### Changes
+
+- refactor: reorganize settings tab layout and improve section headings
+- feat: add create new folder option in folder navigator modal
+
 ## [0.4.1] - 2025-09-30
 
 ### Changes
