@@ -18,3 +18,19 @@
 .suggestion-highlight {
     font-weight: bold;
 }
+
+.folder-create-option {
+    display: flex;
+    align-items: center;
+    padding: 4px 0;
+    color: var(--text-accent);
+}
+
+.folder-create-icon {
+    margin-right: 6px;
+    font-size: 1.1em;
+}
+
+.folder-create-text {
+    font-style: italic;
+}

@@ -5,6 +5,7 @@ import {
     WorkspaceLeaf,
     View,
     FuzzyMatch,
+    Notice,
 } from "obsidian";
 import type FolderNavigatorPlugin from "./main";
 import { FolderDisplayMode } from "./settings";
@@ -51,6 +52,11 @@ interface FolderWithScore {
     folder: TFolder;
     score: number;
     match: FuzzyMatch<TFolder>;
+}
+
+interface CreateFolderOption extends TFolder {
+    _isCreateOption: boolean;
+    _folderName: string;
 }
 
 export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
@@ -439,6 +445,54 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
             this.plugin,
         );
 
+        // If query is provided, add "Create new folder" option at the end
+        if (normalizedQuery.length > 0) {
+            // Filter out separators to count real folder matches
+            const realFolderMatches = limitedResults.filter(
+                (result) => !(result.item as any)._isSeparator,
+            );
+
+            // Only show create option if the exact folder doesn't already exist
+            const exactMatch = realFolderMatches.some(
+                (result) =>
+                    result.item.path.toLowerCase() === normalizedQuery ||
+                    result.item.name.toLowerCase() === normalizedQuery,
+            );
+
+            if (!exactMatch) {
+                const createOption = {} as CreateFolderOption;
+                createOption._isCreateOption = true;
+                createOption._folderName = query.trim();
+
+                // Add separator before create option if there are results
+                if (limitedResults.length > 0) {
+                    const separator = {} as TFolder;
+                    (separator as any)._isSeparator = true;
+                    (separator as any)._separatorText = "—————";
+
+                    return [
+                        ...limitedResults,
+                        {
+                            item: separator,
+                            match: { score: 0, matches: [] },
+                        },
+                        {
+                            item: createOption as TFolder,
+                            match: { score: 0, matches: [] },
+                        },
+                    ];
+                } else {
+                    // No results, just show create option
+                    return [
+                        {
+                            item: createOption as TFolder,
+                            match: { score: 0, matches: [] },
+                        },
+                    ];
+                }
+            }
+        }
+
         return limitedResults;
     }
 
@@ -450,6 +504,10 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
         // For separator folders (which will have a special property), return the separator text
         if ((folder as any)._isSeparator) {
             return (folder as any)._separatorText;
+        }
+        // For create folder option
+        if ((folder as CreateFolderOption)._isCreateOption) {
+            return `Create new folder: ${(folder as CreateFolderOption)._folderName}`;
         }
         return folder.path;
     }
@@ -516,25 +574,54 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
     }
 
     /**
-     * Event handler for when a folder is chosen from the suggestion list
+     * Handle creating a new folder
      */
-    onChooseItem(folder: TFolder, evt: MouseEvent | KeyboardEvent): void {
-        // Check if this is a separator and ignore if so
-        if ((folder as any)._isSeparator) {
-            return;
+    private async handleCreateFolder(folderName: string): Promise<void> {
+        try {
+            log(`Creating new folder: "${folderName}"`, this.plugin);
+
+            // Get the base path from settings
+            const basePath = this.plugin.settings.newFolderLocation;
+            const fullPath = basePath
+                ? `${basePath}/${folderName}`
+                : folderName;
+
+            log(`Full path for new folder: "${fullPath}"`, this.plugin);
+
+            // Check if folder already exists
+            const existingFolder =
+                this.app.vault.getAbstractFileByPath(fullPath);
+            if (existingFolder) {
+                new Notice(`Folder "${fullPath}" already exists`);
+                return;
+            }
+
+            // Create the folder
+            const newFolder = await this.app.vault.createFolder(fullPath);
+            log(`Folder created successfully: "${fullPath}"`, this.plugin);
+
+            new Notice(`Folder "${fullPath}" created successfully`);
+
+            // Close the modal
+            this.close();
+
+            // Navigate to the newly created folder
+            setTimeout(() => {
+                this.navigateToFolder(newFolder);
+            }, 100);
+        } catch (error) {
+            logError(`Error creating folder: ${error}`);
+            new Notice(`Failed to create folder: ${error.message || error}`);
         }
+    }
 
-        log(
-            `Folder selected: "${folder.path}" (name: "${folder.name}")`,
-            this.plugin,
-        );
-
+    /**
+     * Navigate to a folder (same logic as in onChooseItem)
+     */
+    private navigateToFolder(folder: TFolder): void {
         try {
             // Update folder history
             this.updateFolderHistory(folder);
-
-            // Close the modal first
-            this.close();
 
             // Make sure the file explorer is visible
             const fileExplorerLeaves =
@@ -607,6 +694,35 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
         } catch (error) {
             logError(`Error in folder navigation: ${error}`);
         }
+    }
+
+    /**
+     * Event handler for when a folder is chosen from the suggestion list
+     */
+    onChooseItem(folder: TFolder, evt: MouseEvent | KeyboardEvent): void {
+        // Check if this is a separator and ignore if so
+        if ((folder as any)._isSeparator) {
+            return;
+        }
+
+        // Check if this is a create folder option
+        if ((folder as CreateFolderOption)._isCreateOption) {
+            this.handleCreateFolder((folder as CreateFolderOption)._folderName);
+            return;
+        }
+
+        log(
+            `Folder selected: "${folder.path}" (name: "${folder.name}")`,
+            this.plugin,
+        );
+
+        // Close the modal first
+        this.close();
+
+        // Navigate to the selected folder
+        setTimeout(() => {
+            this.navigateToFolder(folder);
+        }, 100);
     }
 
     /**
@@ -744,6 +860,25 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
                 cls: "folder-separator",
             });
             separatorEl.setText((item.item as any)._separatorText);
+            return;
+        }
+
+        // Check if this is a create folder option
+        if ((item.item as CreateFolderOption)._isCreateOption) {
+            el.empty();
+            const createEl = el.createDiv({
+                cls: "folder-create-option",
+            });
+            const iconEl = createEl.createSpan({
+                cls: "folder-create-icon",
+            });
+            iconEl.setText("➕ ");
+            const textEl = createEl.createSpan({
+                cls: "folder-create-text",
+            });
+            textEl.setText(
+                `Create new folder: "${(item.item as CreateFolderOption)._folderName}"`,
+            );
             return;
         }
 

@@ -20,6 +20,7 @@ export interface PluginSettings {
             accessCount: number; // visit count
         }
     >;
+    newFolderLocation: string; // Path where new folders should be created (empty string = root)
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -30,4 +31,5 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     recentFoldersToShow: 5,
     frequentFoldersToShow: 5,
     folderHistory: {},
+    newFolderLocation: "", // Empty string means root folder
 };

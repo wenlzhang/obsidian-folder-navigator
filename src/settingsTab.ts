@@ -5,9 +5,42 @@ import {
     DropdownComponent,
     Modal,
     Notice,
+    FuzzySuggestModal,
+    TFolder,
 } from "obsidian";
 import FolderNavigatorPlugin from "./main";
 import { FolderDisplayMode } from "./settings";
+
+/**
+ * Modal for searching and selecting a folder for new folder creation location
+ */
+class FolderSelectionModal extends FuzzySuggestModal<TFolder> {
+    plugin: FolderNavigatorPlugin;
+    onSelect: (folder: TFolder) => void;
+
+    constructor(
+        app: App,
+        plugin: FolderNavigatorPlugin,
+        onSelect: (folder: TFolder) => void,
+    ) {
+        super(app);
+        this.plugin = plugin;
+        this.onSelect = onSelect;
+        this.setPlaceholder("Search for a folder...");
+    }
+
+    getItems(): TFolder[] {
+        return this.app.vault.getAllFolders();
+    }
+
+    getItemText(folder: TFolder): string {
+        return folder.path || "/";
+    }
+
+    onChooseItem(folder: TFolder): void {
+        this.onSelect(folder);
+    }
+}
 
 export class SettingsTab extends PluginSettingTab {
     plugin: FolderNavigatorPlugin;
@@ -88,6 +121,43 @@ export class SettingsTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }),
             );
+
+        // New folder creation section
+        new Setting(containerEl).setName("Folder creation").setHeading();
+
+        new Setting(containerEl)
+            .setName("Default location for new folders")
+            .setDesc(
+                "Choose where new folders will be created when using the 'Create folder' option. Default is the vault root.",
+            )
+            .addButton((button) => {
+                const displayPath =
+                    this.plugin.settings.newFolderLocation || "/ (Root)";
+                button.setButtonText(displayPath).onClick(() => {
+                    const modal = new FolderSelectionModal(
+                        this.app,
+                        this.plugin,
+                        async (folder: TFolder) => {
+                            this.plugin.settings.newFolderLocation =
+                                folder.path;
+                            await this.plugin.saveSettings();
+                            button.setButtonText(folder.path || "/ (Root)");
+                        },
+                    );
+                    modal.open();
+                });
+            })
+            .addExtraButton((button) => {
+                button
+                    .setIcon("reset")
+                    .setTooltip("Reset to root folder")
+                    .onClick(async () => {
+                        this.plugin.settings.newFolderLocation = "";
+                        await this.plugin.saveSettings();
+                        // Update button text by recreating the setting
+                        this.display();
+                    });
+            });
 
         // Folder display preferences section
         new Setting(containerEl)
